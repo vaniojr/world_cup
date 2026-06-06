@@ -57,7 +57,11 @@ Importante:
   const content = message.content[0];
   if (content.type !== "text") throw new Error("Unexpected response type");
 
-  const jsonText = content.text.trim();
+  // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
+  const raw = content.text.trim();
+  const jsonText = raw.startsWith("```")
+    ? raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim()
+    : raw;
   const parsed = JSON.parse(jsonText);
 
   return {
