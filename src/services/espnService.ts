@@ -1,0 +1,158 @@
+import { Match, Standing, Team, Group } from "@/types";
+import { GROUPS, ALL_TEAMS } from "@/data/mockWorldCup2026";
+import { calculateGroupStandings } from "@/lib/standings";
+
+const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
+const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings";
+
+// ─── ESPN → internal type mappers ────────────────────────────────────────────
+
+function mapStatus(espnStatus: string): "scheduled" | "live" | "finished" {
+  if (espnStatus === "STATUS_FINAL") return "finished";
+  if (["STATUS_IN_PROGRESS", "STATUS_HALFTIME", "STATUS_FIRST_HALF", "STATUS_SECOND_HALF"].includes(espnStatus))
+    return "live";
+  return "scheduled";
+}
+
+function findTeamByAbbr(abbr: string): Team | undefined {
+  return ALL_TEAMS.find(t => t.fifaCode === abbr);
+}
+
+function mapEspnFixture(event: Record<string, unknown>): Match | null {
+  try {
+    const comp = (event.competitions as Record<string, unknown>[])[0];
+    const competitors = comp.competitors as Record<string, unknown>[];
+    const homeComp = competitors.find(c => c.homeAway === "home");
+    const awayComp = competitors.find(c => c.homeAway === "away");
+    if (!homeComp || !awayComp) return null;
+
+    const homeTeamData = homeComp.team as Record<string, unknown>;
+    const awayTeamData = awayComp.team as Record<string, unknown>;
+    const homeAbbr = homeTeamData.abbreviation as string;
+    const awayAbbr = awayTeamData.abbreviation as string;
+
+    // Try to find from our known teams, fall back to ESPN data
+    const homeTeam: Team = findTeamByAbbr(homeAbbr) ?? {
+      id: homeAbbr.toLowerCase(),
+      name: homeTeamData.displayName as string,
+      fifaCode: homeAbbr,
+      flagUrl: homeTeamData.logo as string,
+    };
+    const awayTeam: Team = findTeamByAbbr(awayAbbr) ?? {
+      id: awayAbbr.toLowerCase(),
+      name: awayTeamData.displayName as string,
+      fifaCode: awayAbbr,
+      flagUrl: awayTeamData.logo as string,
+    };
+
+    const statusType = (comp.status as Record<string, unknown>).type as Record<string, unknown>;
+    const statusName = statusType.name as string;
+    const status = mapStatus(statusName);
+
+    const homeScore = status !== "scheduled" ? parseInt(homeComp.score as string, 10) : undefined;
+    const awayScore = status !== "scheduled" ? parseInt(awayComp.score as string, 10) : undefined;
+
+    const venue = comp.venue as Record<string, unknown> | undefined;
+    const venueName = (venue?.fullName as string) ?? "";
+    const venueAddress = venue?.address as Record<string, unknown> | undefined;
+    const city = (venueAddress?.city as string) ?? "";
+
+    // Determine group from our data
+    const group = homeTeam.group ?? "";
+
+    const stage = group ? "group" : "round-of-32";
+
+    return {
+      id: event.id as string,
+      stage,
+      group: group || undefined,
+      homeTeam,
+      awayTeam,
+      homeScore,
+      awayScore,
+      date: event.date as string,
+      venue: venueName,
+      city,
+      status,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function fetchLiveMatches(): Promise<Match[]> {
+  try {
+    const res = await fetch(`${ESPN_BASE}/scoreboard`, {
+      next: { revalidate: 30 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const events: Record<string, unknown>[] = data.events ?? [];
+    return events.map(mapEspnFixture).filter(Boolean) as Match[];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchAllGroupMatches(): Promise<Match[]> {
+  try {
+    const res = await fetch(
+      `${ESPN_BASE}/scoreboard?dates=20260611-20260703&limit=200`,
+      { next: { revalidate: 60 } },
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const events: Record<string, unknown>[] = data.events ?? [];
+    // Only return group stage matches (those with known teams that have a group)
+    return events
+      .map(mapEspnFixture)
+      .filter((m): m is Match => m !== null && m.stage === "group");
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchGroupStandings(): Promise<Group[]> {
+  try {
+    const res = await fetch(ESPN_STANDINGS, { next: { revalidate: 120 } });
+    if (!res.ok) return GROUPS;
+    const data = await res.json();
+    const children: Record<string, unknown>[] = data.children ?? [];
+
+    return children.map((child, idx) => {
+      const groupLetter = String.fromCharCode(65 + idx); // A, B, C...
+      const fallback = GROUPS.find(g => g.id === groupLetter)!;
+      const standings = (child.standings as Record<string, unknown>)?.entries as Record<string, unknown>[];
+      if (!standings?.length) return fallback;
+
+      const teams: Team[] = standings.map(entry => {
+        const teamData = entry.team as Record<string, unknown>;
+        const abbr = teamData.abbreviation as string;
+        return findTeamByAbbr(abbr) ?? {
+          id: abbr.toLowerCase(),
+          name: teamData.displayName as string,
+          fifaCode: abbr,
+          flagUrl: teamData.logo as string,
+          group: groupLetter,
+        };
+      });
+
+      return {
+        id: groupLetter,
+        name: `Grupo ${groupLetter}`,
+        teams,
+        matches: fallback.matches,
+      };
+    });
+  } catch {
+    return GROUPS;
+  }
+}
+
+export async function fetchStandingsForGroup(groupId: string): Promise<Standing[]> {
+  const group = GROUPS.find(g => g.id === groupId);
+  if (!group) return [];
+  return calculateGroupStandings(group.matches, group.teams);
+}

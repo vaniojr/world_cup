@@ -1,0 +1,68 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { Match, MatchAnalysis } from "@/types";
+
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+export async function generateMatchAnalysis(match: Match): Promise<MatchAnalysis> {
+  const stageLabel =
+    match.stage === "group"
+      ? `Fase de Grupos - Grupo ${match.group}`
+      : match.stage;
+
+  const venueLabel = match.venue
+    ? `${match.venue}, ${match.city}`
+    : match.city ?? "A definir";
+
+  const prompt = `Atue como um analista esportivo profissional especializado em futebol internacional.
+Forneça uma análise completa e detalhada do jogo entre:
+${match.homeTeam.name} x ${match.awayTeam.name}
+Competição: FIFA World Cup 2026
+Fase: ${stageLabel}
+Data: ${match.date}
+Local: ${venueLabel}
+
+Inclua as seguintes informações e retorne OBRIGATORIAMENTE um JSON válido com este formato exato:
+{
+  "context": "string com contexto da partida",
+  "recentForm": "string com forma recente das equipes",
+  "tacticalAnalysis": "string com análise tática",
+  "probableLineups": "string com escalações prováveis",
+  "keyPlayers": "string com jogadores-chave",
+  "headToHead": "string com histórico do confronto",
+  "statistics": "string com estatísticas relevantes",
+  "externalFactors": "string com fatores externos",
+  "probabilities": {
+    "homeWin": number entre 0 e 100,
+    "draw": number entre 0 e 100,
+    "awayWin": number entre 0 e 100
+  },
+  "predictedScore": "string como '2-1'",
+  "finalSummary": "string com resumo final"
+}
+
+Importante:
+- Use linguagem clara, objetiva e com tom jornalístico
+- Não apresente o palpite como certeza
+- Retorne APENAS o JSON, sem texto adicional antes ou depois
+- Retorne a resposta em português do Brasil`;
+
+  const message = await client.messages.create({
+    model: process.env.AI_MODEL || "claude-sonnet-4-6",
+    max_tokens: 3000,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type");
+
+  const jsonText = content.text.trim();
+  const parsed = JSON.parse(jsonText);
+
+  return {
+    matchId: match.id,
+    ...parsed,
+    generatedAt: new Date().toISOString(),
+  };
+}
