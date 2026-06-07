@@ -1,35 +1,54 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { GROUPS } from "@/data/mockWorldCup2026";
 import { MatchCard } from "@/components/matches/MatchCard";
 import { GroupStandingsTable } from "@/components/groups/GroupStandingsTable";
 import { MatchAnalysisModal } from "@/components/matches/MatchAnalysisModal";
 import { calculateGroupStandings } from "@/lib/standings";
 import { Match, Group } from "@/types";
+import { AnalysisSummary } from "@/lib/db";
 import { RefreshCw } from "lucide-react";
 
 export default function GroupsPage() {
-  const [activeGroup, setActiveGroup] = useState("A");
+  const [activeGroup, setActiveGroup]     = useState("A");
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
-  const [groups, setGroups] = useState<Group[]>(GROUPS);
-  const [syncing, setSyncing] = useState(false);
+  const [groups, setGroups]               = useState<Group[]>(GROUPS);
+  const [summaries, setSummaries]         = useState<AnalysisSummary[]>([]);
+  const [syncing, setSyncing]             = useState(false);
 
   const syncData = useCallback(async () => {
     setSyncing(true);
     try {
       const res = await fetch("/api/matches", { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        setGroups(data.groups);
-      }
+      if (res.ok) setGroups((await res.json()).groups);
     } catch { /* keep static data */ }
     finally { setSyncing(false); }
   }, []);
 
-  useEffect(() => { syncData(); }, [syncData]);
+  const fetchSummaries = useCallback(async () => {
+    try {
+      const res = await fetch("/api/analyses-summary");
+      if (res.ok) setSummaries((await res.json()).summaries ?? []);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    syncData();
+    fetchSummaries();
+  }, [syncData, fetchSummaries]);
+
+  const handleModalClose = useCallback(() => {
+    setSelectedMatch(null);
+    fetchSummaries();
+  }, [fetchSummaries]);
+
+  const predictionsMap = useMemo(
+    () => new Map(summaries.map(s => [s.matchId, s.predictedScore])),
+    [summaries],
+  );
 
   const currentGroup = groups.find(g => g.id === activeGroup)!;
-  const standings = calculateGroupStandings(currentGroup.matches, currentGroup.teams);
+  const standings    = calculateGroupStandings(currentGroup.matches, currentGroup.teams);
 
   return (
     <div className="space-y-6">
@@ -74,7 +93,12 @@ export default function GroupsPage() {
             Partidas — Grupo {activeGroup}
           </h3>
           {currentGroup.matches.map(m => (
-            <MatchCard key={m.id} match={m} onClick={setSelectedMatch} />
+            <MatchCard
+              key={m.id}
+              match={m}
+              predictedScore={predictionsMap.get(m.id)}
+              onClick={setSelectedMatch}
+            />
           ))}
         </div>
         <div className="space-y-4">
@@ -86,7 +110,7 @@ export default function GroupsPage() {
       </div>
 
       {selectedMatch && (
-        <MatchAnalysisModal match={selectedMatch} onClose={() => setSelectedMatch(null)} />
+        <MatchAnalysisModal match={selectedMatch} onClose={handleModalClose} />
       )}
     </div>
   );

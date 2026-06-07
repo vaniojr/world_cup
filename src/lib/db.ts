@@ -33,3 +33,25 @@ export async function saveAnalysis(matchId: string, analysis: MatchAnalysis): Pr
           updated_at = NOW()
   `;
 }
+
+export type AnalysisSummary = {
+  matchId: string;
+  predictedScore: string;
+  generatedAt: string;
+};
+
+export async function getAllAnalysesSummary(): Promise<AnalysisSummary[]> {
+  const rows = await sql`
+    SELECT
+      match_id,
+      analysis->>'predictedScore' AS predicted_score,
+      updated_at
+    FROM match_analyses
+    ORDER BY updated_at DESC
+  `;
+  return rows.map(r => ({
+    matchId:        r.match_id as string,
+    predictedScore: r.predicted_score as string,
+    generatedAt:    r.updated_at as string,
+  }));
+}
