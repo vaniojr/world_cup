@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { ALL_MATCHES, GROUPS } from "@/data/mockWorldCup2026";
 import { MatchCard } from "@/components/matches/MatchCard";
@@ -7,12 +7,16 @@ import { MatchAnalysisModal } from "@/components/matches/MatchAnalysisModal";
 import { Match, Group } from "@/types";
 import { Activity, Calendar, CheckCircle, Trophy, RefreshCw } from "lucide-react";
 
+const LIVE_POLL_INTERVAL = 30_000;  // 30s — só usado com jogos ao vivo
+
 export default function HomePage() {
   const [matches, setMatches] = useState<Match[]>(ALL_MATCHES);
   const [groups, setGroups] = useState<Group[]>(GROUPS);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const matchesRef = useRef(matches);
+  matchesRef.current = matches;
 
   const syncData = useCallback(async () => {
     setSyncing(true);
@@ -29,13 +33,16 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    // Busca uma vez ao montar
     syncData();
-    // Poll every 30s when there are live matches
+
+    // Polling só ativo durante jogos ao vivo (usa ref para não recriar o intervalo)
     const interval = setInterval(() => {
-      if (matches.some(m => m.status === "live")) syncData();
-    }, 30000);
+      if (matchesRef.current.some(m => m.status === "live")) syncData();
+    }, LIVE_POLL_INTERVAL);
+
     return () => clearInterval(interval);
-  }, [syncData, matches]);
+  }, [syncData]); // 'matches' removido — evita loop infinito
 
   const liveMatches    = matches.filter(m => m.status === "live");
   const upcomingMatches = matches.filter(m => m.status === "scheduled").slice(0, 6);
