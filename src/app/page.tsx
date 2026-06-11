@@ -7,6 +7,7 @@ import { MatchAnalysisModal } from "@/components/matches/MatchAnalysisModal";
 import { Match, MatchStatus, Group } from "@/types";
 import { AnalysisSummary } from "@/lib/db";
 import { calculatePoints } from "@/lib/scoring";
+import { getLocalDateKey } from "@/lib/utils";
 import { Activity, Calendar, Filter, Trophy, RefreshCw, Sparkles, Star } from "lucide-react";
 
 const LIVE_POLL_INTERVAL = 30_000;
@@ -99,17 +100,20 @@ export default function HomePage() {
     [matches],
   );
 
-  // Available match dates (YYYY-MM-DD) for the date filter
+  // Available match dates (in the viewer's local timezone) for the date filter
   const dateOptions = useMemo(() => {
-    const keys = Array.from(new Set(sortedMatches.map(m => m.date.slice(0, 10))));
-    return keys.map(key => ({
-      value: key,
-      label: new Date(`${key}T12:00:00Z`).toLocaleDateString("pt-BR", {
-        weekday: "short",
-        day: "2-digit",
-        month: "short",
-      }),
-    }));
+    const keys = Array.from(new Set(sortedMatches.map(m => getLocalDateKey(m.date)))).sort();
+    return keys.map(key => {
+      const [year, month, day] = key.split("-").map(Number);
+      return {
+        value: key,
+        label: new Date(year, month - 1, day).toLocaleDateString("pt-BR", {
+          weekday: "short",
+          day: "2-digit",
+          month: "short",
+        }),
+      };
+    });
   }, [sortedMatches]);
 
   // Counts per status for the status filter buttons
@@ -122,7 +126,7 @@ export default function HomePage() {
   const filteredMatches = useMemo(() => {
     return sortedMatches.filter(m => {
       if (statusFilter !== "all" && m.status !== statusFilter) return false;
-      if (dateFilter !== "all" && m.date.slice(0, 10) !== dateFilter) return false;
+      if (dateFilter !== "all" && getLocalDateKey(m.date) !== dateFilter) return false;
       return true;
     });
   }, [sortedMatches, statusFilter, dateFilter]);
