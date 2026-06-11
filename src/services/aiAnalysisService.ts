@@ -45,6 +45,12 @@ Inclua as seguintes informações e retorne OBRIGATORIAMENTE um JSON válido com
 Importante:
 - Use linguagem clara, objetiva e com tom jornalístico
 - Não apresente o palpite como certeza
+- "predictedScore" deve estar SEMPRE no formato "{golsMandante}-{golsVisitante}", ou seja,
+  o primeiro número é o placar de ${match.homeTeam.name} (mandante) e o segundo é o placar
+  de ${match.awayTeam.name} (visitante), na mesma ordem do confronto "${match.homeTeam.name} x ${match.awayTeam.name}"
+- Garanta que "predictedScore", "probabilities" e "finalSummary" sejam consistentes entre si
+  (o time apontado como favorito/vencedor no resumo e nas probabilidades deve ser o mesmo
+  indicado pelo placar previsto)
 - Retorne APENAS o JSON, sem texto adicional antes ou depois
 - Retorne a resposta em português do Brasil`;
 
