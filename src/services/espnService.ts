@@ -85,7 +85,7 @@ function mapEspnFixture(event: Record<string, unknown>): Match | null {
 export async function fetchLiveMatches(): Promise<Match[]> {
   try {
     const res = await fetch(`${ESPN_BASE}/scoreboard`, {
-      next: { revalidate: 30 },
+      cache: "no-store",
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -100,7 +100,7 @@ export async function fetchAllGroupMatches(): Promise<Match[]> {
   try {
     const res = await fetch(
       `${ESPN_BASE}/scoreboard?dates=20260611-20260703&limit=200`,
-      { next: { revalidate: 60 } },
+      { cache: "no-store" },
     );
     if (!res.ok) return [];
     const data = await res.json();
