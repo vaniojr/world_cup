@@ -4,12 +4,19 @@ import Link from "next/link";
 import { ALL_MATCHES, GROUPS } from "@/data/mockWorldCup2026";
 import { MatchCard } from "@/components/matches/MatchCard";
 import { MatchAnalysisModal } from "@/components/matches/MatchAnalysisModal";
-import { Match, Group } from "@/types";
+import { Match, MatchStatus, Group } from "@/types";
 import { AnalysisSummary } from "@/lib/db";
 import { calculatePoints } from "@/lib/scoring";
-import { Activity, Calendar, CheckCircle, Trophy, RefreshCw, Sparkles, Star } from "lucide-react";
+import { Activity, Calendar, Filter, Trophy, RefreshCw, Sparkles, Star } from "lucide-react";
 
 const LIVE_POLL_INTERVAL = 30_000;
+
+const STATUS_FILTERS: { value: "all" | MatchStatus; label: string }[] = [
+  { value: "all",       label: "Todos" },
+  { value: "scheduled", label: "Agendado" },
+  { value: "live",      label: "Ao Vivo" },
+  { value: "finished",  label: "Encerrado" },
+];
 
 export default function HomePage() {
   const [matches, setMatches]               = useState<Match[]>(ALL_MATCHES);
@@ -18,6 +25,9 @@ export default function HomePage() {
   const [selectedMatch, setSelectedMatch]   = useState<Match | null>(null);
   const [lastUpdated, setLastUpdated]       = useState<Date | null>(null);
   const [syncing, setSyncing]               = useState(false);
+  const [statusFilter, setStatusFilter]     = useState<"all" | MatchStatus>("all");
+  const [dateFilter, setDateFilter]         = useState<string>("all");
+  const [visibleCount, setVisibleCount]     = useState(12);
   const matchesRef = useRef(matches);
   matchesRef.current = matches;
 
@@ -81,9 +91,46 @@ export default function HomePage() {
     return { analyzed, points, scored };
   }, [summaries, matches]);
 
-  const liveMatches     = matches.filter(m => m.status === "live");
-  const upcomingMatches = matches.filter(m => m.status === "scheduled").slice(0, 6);
-  const recentMatches   = matches.filter(m => m.status === "finished").slice(0, 6);
+  const liveMatches = matches.filter(m => m.status === "live");
+
+  // All matches sorted chronologically
+  const sortedMatches = useMemo(
+    () => [...matches].sort((a, b) => a.date.localeCompare(b.date)),
+    [matches],
+  );
+
+  // Available match dates (YYYY-MM-DD) for the date filter
+  const dateOptions = useMemo(() => {
+    const keys = Array.from(new Set(sortedMatches.map(m => m.date.slice(0, 10))));
+    return keys.map(key => ({
+      value: key,
+      label: new Date(`${key}T12:00:00Z`).toLocaleDateString("pt-BR", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+      }),
+    }));
+  }, [sortedMatches]);
+
+  // Counts per status for the status filter buttons
+  const statusCounts = useMemo(() => {
+    const counts: Record<"all" | MatchStatus, number> = { all: matches.length, scheduled: 0, live: 0, finished: 0 };
+    for (const m of matches) counts[m.status]++;
+    return counts;
+  }, [matches]);
+
+  const filteredMatches = useMemo(() => {
+    return sortedMatches.filter(m => {
+      if (statusFilter !== "all" && m.status !== statusFilter) return false;
+      if (dateFilter !== "all" && m.date.slice(0, 10) !== dateFilter) return false;
+      return true;
+    });
+  }, [sortedMatches, statusFilter, dateFilter]);
+
+  // Reset pagination whenever filters change
+  useEffect(() => {
+    setVisibleCount(12);
+  }, [statusFilter, dateFilter]);
 
   return (
     <div className="space-y-8">
@@ -170,38 +217,72 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Upcoming Matches */}
+      {/* All Matches */}
       <section>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h3 className="flex items-center gap-2 text-lg font-bold text-gray-900 dark:text-white">
             <Calendar className="w-5 h-5 text-blue-500" />
-            Próximos Jogos
+            Jogos da Copa
           </h3>
-          <Link href="/groups" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-            Ver todos
-          </Link>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {filteredMatches.length} de {matches.length} jogos
+          </span>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {upcomingMatches.map(m => (
-            <MatchCard key={m.id} match={m} predictedScore={predictionsMap.get(m.id)} onClick={setSelectedMatch} />
-          ))}
-        </div>
-      </section>
 
-      {/* Recent Results */}
-      {recentMatches.length > 0 && (
-        <section>
-          <h3 className="flex items-center gap-2 text-lg font-bold mb-4 text-gray-900 dark:text-white">
-            <CheckCircle className="w-5 h-5 text-gray-500" />
-            Últimos Resultados
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {recentMatches.map(m => (
-              <MatchCard key={m.id} match={m} predictedScore={predictionsMap.get(m.id)} onClick={setSelectedMatch} />
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <Filter className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" />
+          {STATUS_FILTERS.map(f => (
+            <button
+              key={f.value}
+              onClick={() => setStatusFilter(f.value)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                statusFilter === f.value
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
+              }`}
+            >
+              {f.label} ({statusCounts[f.value]})
+            </button>
+          ))}
+
+          <select
+            value={dateFilter}
+            onChange={e => setDateFilter(e.target.value)}
+            className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-none focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+          >
+            <option value="all">Todas as datas</option>
+            {dateOptions.map(d => (
+              <option key={d.value} value={d.value}>{d.label}</option>
             ))}
+          </select>
+        </div>
+
+        {/* Match grid */}
+        {filteredMatches.length === 0 ? (
+          <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">
+            Nenhum jogo encontrado para os filtros selecionados.
           </div>
-        </section>
-      )}
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredMatches.slice(0, visibleCount).map(m => (
+                <MatchCard key={m.id} match={m} predictedScore={predictionsMap.get(m.id)} onClick={setSelectedMatch} />
+              ))}
+            </div>
+            {visibleCount < filteredMatches.length && (
+              <div className="flex justify-center mt-5">
+                <button
+                  onClick={() => setVisibleCount(c => c + 12)}
+                  className="px-5 py-2 rounded-xl text-sm font-semibold bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Mostrar mais jogos
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </section>
 
       {selectedMatch && (
         <MatchAnalysisModal match={selectedMatch} onClose={handleModalClose} />
