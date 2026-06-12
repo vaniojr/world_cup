@@ -23,6 +23,13 @@ Fase: ${stageLabel}
 Data: ${match.date}
 Local: ${venueLabel}
 
+CONTEXTO OBRIGATÓRIO — COPA DO MUNDO 2026:
+- Canadá, Estados Unidos e México são PAÍSES-SEDE e se classificaram AUTOMATICAMENTE, sem disputar eliminatórias da CONCACAF para este ciclo.
+  Portanto, NÃO existem estatísticas de eliminatórias 2026 para essas seleções. Nunca invente ou extrapole dados dessas eliminatórias.
+- Para seleções europeias, sul-americanas e de outras confederações, utilize apenas dados de eliminatórias e competições que realmente ocorreram.
+- Se não houver dados confiáveis sobre uma estatística específica, sinalize a incerteza com expressões como "historicamente", "em jogos recentes" ou "estimativa baseada em ciclos anteriores".
+  NUNCA fabrique números precisos para eventos que não aconteceram.
+
 Inclua as seguintes informações e retorne OBRIGATORIAMENTE um JSON válido com este formato exato:
 {
   "context": "string com contexto da partida",

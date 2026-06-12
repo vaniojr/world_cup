@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
+import pkg from "../../package.json";
 import { ALL_MATCHES, GROUPS } from "@/data/mockWorldCup2026";
 import { MatchCard } from "@/components/matches/MatchCard";
 import { MatchAnalysisModal } from "@/components/matches/MatchAnalysisModal";
@@ -143,6 +144,7 @@ export default function HomePage() {
         <div className="flex items-center gap-3 mb-2">
           <Trophy className="w-8 h-8 text-yellow-400" />
           <h2 className="text-2xl font-black">FIFA World Cup 2026™</h2>
+          <span className="ml-auto text-xs font-mono text-blue-400 bg-white/10 px-2 py-0.5 rounded-full">v{pkg.version}</span>
         </div>
         <p className="text-blue-200 mb-4">48 seleções · 12 grupos · 104 partidas · 3 países-sede</p>
 
