@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Match, MatchAnalysis } from "@/types";
+import { Match, MatchAnalysis, HeadToHeadData } from "@/types";
 import { TeamFlag } from "@/components/teams/TeamFlag";
 import { MatchStatusBadge } from "./MatchStatusBadge";
 import { formatDate } from "@/lib/utils";
@@ -12,6 +12,61 @@ import {
 interface MatchAnalysisModalProps {
   match: Match;
   onClose: () => void;
+}
+
+function HeadToHeadSection({ h2h, homeName, awayName }: {
+  h2h: HeadToHeadData | string;
+  homeName: string;
+  awayName: string;
+}) {
+  if (typeof h2h === "string") {
+    return <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{h2h}</p>;
+  }
+
+  const total = h2h.totalMatches;
+
+  return (
+    <div className="space-y-3">
+      {total === 0 ? (
+        <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+          Sem confrontos diretos registrados entre as seleções.
+        </p>
+      ) : (
+        <>
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-bold text-green-600 dark:text-green-400">{h2h.homeWins}V <span className="font-normal text-xs text-gray-500">{homeName}</span></span>
+            <span className="font-bold text-yellow-600 dark:text-yellow-400">{h2h.draws}E</span>
+            <span className="font-bold text-red-600 dark:text-red-400">{h2h.awayWins}V <span className="font-normal text-xs text-gray-500">{awayName}</span></span>
+          </div>
+          <div className="flex h-2 rounded-full overflow-hidden">
+            {h2h.homeWins > 0 && <div className="bg-green-500" style={{ width: `${(h2h.homeWins / total) * 100}%` }} />}
+            {h2h.draws > 0 && <div className="bg-yellow-400" style={{ width: `${(h2h.draws / total) * 100}%` }} />}
+            {h2h.awayWins > 0 && <div className="bg-red-500" style={{ width: `${(h2h.awayWins / total) * 100}%` }} />}
+          </div>
+          <p className="text-xs text-gray-400">{total} confronto{total !== 1 ? "s" : ""} no total</p>
+        </>
+      )}
+
+      {h2h.lastMatches.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Últimos confrontos
+          </p>
+          {h2h.lastMatches.map((m, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs bg-white dark:bg-gray-800 rounded-lg px-3 py-2">
+              <span className="text-gray-400 shrink-0 w-20">{m.date}</span>
+              <span className="font-semibold text-gray-800 dark:text-gray-200 flex-1 text-center">{m.score}</span>
+              <span className="text-gray-400 shrink-0 text-right max-w-[130px] truncate">{m.competition}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {h2h.note && (
+        <p className="text-xs text-gray-400 italic">{h2h.note}</p>
+      )}
+    </div>
+  );
 }
 
 type AnalysisSection = { icon: React.ReactNode; title: string; content: string };
@@ -63,14 +118,13 @@ export function MatchAnalysisModal({ match, onClose }: MatchAnalysisModalProps) 
   }
 
   const sections: AnalysisSection[] = analysis ? [
-    { icon: <Trophy className="w-4 h-4" />,    title: "Contexto da Partida",    content: analysis.context },
-    { icon: <TrendingUp className="w-4 h-4" />, title: "Forma Recente",         content: analysis.recentForm },
-    { icon: <Swords className="w-4 h-4" />,     title: "Análise Tática",        content: analysis.tacticalAnalysis },
-    { icon: <Users className="w-4 h-4" />,      title: "Escalações Prováveis",  content: analysis.probableLineups },
-    { icon: <BarChart3 className="w-4 h-4" />,  title: "Jogadores-Chave",       content: analysis.keyPlayers },
-    { icon: <BarChart3 className="w-4 h-4" />,  title: "Histórico do Confronto",content: analysis.headToHead },
-    { icon: <BarChart3 className="w-4 h-4" />,  title: "Estatísticas",          content: analysis.statistics },
-    { icon: <MapPin className="w-4 h-4" />,     title: "Fatores Externos",      content: analysis.externalFactors },
+    { icon: <Trophy className="w-4 h-4" />,    title: "Contexto da Partida",   content: analysis.context },
+    { icon: <TrendingUp className="w-4 h-4" />, title: "Forma Recente",        content: analysis.recentForm },
+    { icon: <Swords className="w-4 h-4" />,     title: "Análise Tática",       content: analysis.tacticalAnalysis },
+    { icon: <Users className="w-4 h-4" />,      title: "Escalações Prováveis", content: analysis.probableLineups },
+    { icon: <BarChart3 className="w-4 h-4" />,  title: "Jogadores-Chave",      content: analysis.keyPlayers },
+    { icon: <BarChart3 className="w-4 h-4" />,  title: "Estatísticas",         content: analysis.statistics },
+    { icon: <MapPin className="w-4 h-4" />,     title: "Fatores Externos",     content: analysis.externalFactors },
   ] : [];
 
   return (
@@ -214,8 +268,33 @@ export function MatchAnalysisModal({ match, onClose }: MatchAnalysisModalProps) 
               </div>
 
               {/* Analysis Sections */}
-              {sections.map((s, i) => (
+              {sections.slice(0, 5).map((s, i) => (
                 <div key={i} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                  <h4 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white mb-2 text-sm">
+                    <span className="text-blue-600 dark:text-blue-400">{s.icon}</span>
+                    {s.title}
+                  </h4>
+                  <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-line">
+                    {s.content}
+                  </p>
+                </div>
+              ))}
+
+              {/* Head to Head — structured visual block */}
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
+                <h4 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white mb-3 text-sm">
+                  <span className="text-blue-600 dark:text-blue-400"><Swords className="w-4 h-4" /></span>
+                  Histórico do Confronto
+                </h4>
+                <HeadToHeadSection
+                  h2h={analysis.headToHead as HeadToHeadData | string}
+                  homeName={match.homeTeam.name}
+                  awayName={match.awayTeam.name}
+                />
+              </div>
+
+              {sections.slice(5).map((s, i) => (
+                <div key={i + 5} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4">
                   <h4 className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white mb-2 text-sm">
                     <span className="text-blue-600 dark:text-blue-400">{s.icon}</span>
                     {s.title}

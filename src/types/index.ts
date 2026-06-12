@@ -43,6 +43,21 @@ export type Standing = {
   points: number;
 };
 
+export type HeadToHeadMatch = {
+  date: string;
+  competition: string;
+  score: string;
+};
+
+export type HeadToHeadData = {
+  totalMatches: number;
+  homeWins: number;
+  draws: number;
+  awayWins: number;
+  lastMatches: HeadToHeadMatch[];
+  note?: string;
+};
+
 export type MatchAnalysis = {
   matchId: string;
   context: string;
@@ -50,7 +65,7 @@ export type MatchAnalysis = {
   tacticalAnalysis: string;
   probableLineups: string;
   keyPlayers: string;
-  headToHead: string;
+  headToHead: HeadToHeadData;
   statistics: string;
   externalFactors: string;
   probabilities: {

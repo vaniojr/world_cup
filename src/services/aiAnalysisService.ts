@@ -37,7 +37,17 @@ Inclua as seguintes informações e retorne OBRIGATORIAMENTE um JSON válido com
   "tacticalAnalysis": "string com análise tática",
   "probableLineups": "string com escalações prováveis",
   "keyPlayers": "string com jogadores-chave",
-  "headToHead": "string com histórico do confronto",
+  "headToHead": {
+    "totalMatches": número total de confrontos diretos entre as equipes (0 se não houver registros confiáveis),
+    "homeWins": número de vitórias de ${match.homeTeam.name} no histórico de confrontos,
+    "draws": número de empates,
+    "awayWins": número de vitórias de ${match.awayTeam.name} no histórico de confrontos,
+    "lastMatches": array com os últimos 3 confrontos diretos (array vazio [] se não houver). Cada item:
+      { "date": "dd/mm/aaaa", "competition": "nome da competição", "score": "Time A N-N Time B" }
+      NUNCA invente partidas. Inclua APENAS confrontos que realmente ocorreram e que você conhece com certeza.
+      Se totalMatches for 0, retorne lastMatches como [].
+    "note": string opcional com observação sobre confiabilidade dos dados (omita se não necessário)
+  },
   "statistics": "string com estatísticas relevantes",
   "externalFactors": "string com fatores externos",
   "probabilities": {
