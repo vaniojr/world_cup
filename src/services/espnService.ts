@@ -7,10 +7,12 @@ const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/soccer/fifa.wor
 
 // ─── ESPN → internal type mappers ────────────────────────────────────────────
 
-function mapStatus(espnStatus: string): "scheduled" | "live" | "finished" {
-  if (espnStatus === "STATUS_FINAL") return "finished";
-  if (["STATUS_IN_PROGRESS", "STATUS_HALFTIME", "STATUS_FIRST_HALF", "STATUS_SECOND_HALF"].includes(espnStatus))
-    return "live";
+// ESPN's status.type.state is the reliable signal: "pre" | "in" | "post".
+// The status.type.name varies (STATUS_FINAL, STATUS_FULL_TIME, STATUS_FINAL_PEN, etc.)
+// so we don't match against it directly.
+function mapStatus(state: string): "scheduled" | "live" | "finished" {
+  if (state === "post") return "finished";
+  if (state === "in") return "live";
   return "scheduled";
 }
 
@@ -46,8 +48,7 @@ function mapEspnFixture(event: Record<string, unknown>): Match | null {
     };
 
     const statusType = (comp.status as Record<string, unknown>).type as Record<string, unknown>;
-    const statusName = statusType.name as string;
-    const status = mapStatus(statusName);
+    const status = mapStatus(statusType.state as string);
 
     const homeScore = status !== "scheduled" ? parseInt(homeComp.score as string, 10) : undefined;
     const awayScore = status !== "scheduled" ? parseInt(awayComp.score as string, 10) : undefined;
