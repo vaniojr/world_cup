@@ -146,7 +146,7 @@ export default function HomePage() {
           <h2 className="text-2xl font-black">FIFA World Cup 2026™</h2>
           <span className="ml-auto text-xs font-mono text-blue-400 bg-white/10 px-2 py-0.5 rounded-full">v{pkg.version}</span>
         </div>
-        <p className="text-blue-200 mb-4">48 seleções · 12 grupos · 104 partidas · 3 países-sede</p>
+        <p className="text-blue-200 mb-4">48 seleções · 12 grupos · {matches.length} partidas · 3 países-sede</p>
 
         {/* Torneio stats */}
         <div className="flex flex-wrap gap-3 text-sm mb-4">
