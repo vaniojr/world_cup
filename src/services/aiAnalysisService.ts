@@ -1,52 +1,143 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Match, MatchAnalysis } from "@/types";
+import { CardEvent } from "@/services/espnService";
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-function buildRecentResultsBlock(match: Match, allMatches: Match[]): string {
+function buildRecentResultsBlock(
+  match: Match,
+  allMatches: Match[],
+  cardsByMatchId: Map<string, CardEvent[]> = new Map(),
+): string {
   const finished = allMatches.filter(
     m => m.status === "finished" && m.homeScore !== undefined && m.awayScore !== undefined,
   );
   if (finished.length === 0) return "";
 
-  const fmt = (m: Match) => {
+  const homeId   = match.homeTeam.id;
+  const awayId   = match.awayTeam.id;
+  const homeName = match.homeTeam.name;
+  const awayName = match.awayTeam.name;
+
+  const fmtMatch = (m: Match) => {
     const d = new Date(m.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
     return `  ${m.homeTeam.name} ${m.homeScore} x ${m.awayScore} ${m.awayTeam.name} (${d})`;
   };
 
-  const lines: string[] = [];
+  const sections: string[] = [];
 
+  // ── 1. Resultados do grupo ───────────────────────────────────────────────────
   const sameGroup = finished.filter(m => m.group && m.group === match.group);
   if (sameGroup.length > 0) {
-    lines.push(`Grupo ${match.group} — resultados já disputados na Copa 2026:`);
-    sameGroup.forEach(m => lines.push(fmt(m)));
+    sections.push(`[Grupo ${match.group} — resultados disputados na Copa 2026]`);
+    sameGroup.forEach(m => sections.push(fmtMatch(m)));
   }
 
-  const homeId = match.homeTeam.id;
-  const awayId = match.awayTeam.id;
-  const otherTeamMatches = finished.filter(
-    m => m.group !== match.group &&
-      (m.homeTeam.id === homeId || m.awayTeam.id === homeId ||
-       m.homeTeam.id === awayId || m.awayTeam.id === awayId),
-  );
-  if (otherTeamMatches.length > 0) {
-    lines.push(`Outros jogos das seleções na Copa 2026:`);
-    otherTeamMatches.forEach(m => lines.push(fmt(m)));
+  // ── 2. Performance das equipes na Copa (resumo) ──────────────────────────────
+  const teamSummary = (teamId: string, name: string): string | null => {
+    const ms = finished.filter(m => m.homeTeam.id === teamId || m.awayTeam.id === teamId);
+    if (ms.length === 0) return null;
+    let gf = 0, ga = 0, pts = 0;
+    ms.forEach(m => {
+      const isHome = m.homeTeam.id === teamId;
+      const scored    = isHome ? m.homeScore! : m.awayScore!;
+      const conceded  = isHome ? m.awayScore! : m.homeScore!;
+      gf += scored; ga += conceded;
+      if (scored > conceded) pts += 3;
+      else if (scored === conceded) pts += 1;
+    });
+    const w = ms.filter(m => {
+      const isHome = m.homeTeam.id === teamId;
+      return isHome ? m.homeScore! > m.awayScore! : m.awayScore! > m.homeScore!;
+    }).length;
+    const d = ms.filter(m => m.homeScore === m.awayScore).length;
+    const l = ms.length - w - d;
+    return `  ${name}: ${ms.length}J ${w}V ${d}E ${l}D | ${pts} pts | ${gf} gols marcados / ${ga} sofridos`;
+  };
+
+  const hs = teamSummary(homeId, homeName);
+  const as_ = teamSummary(awayId, awayName);
+  if (hs || as_) {
+    sections.push(`\n[Desempenho na Copa 2026]`);
+    if (hs)  sections.push(hs);
+    if (as_) sections.push(as_);
   }
 
-  if (lines.length === 0) return "";
+  // ── 3. Comparação por adversário comum ───────────────────────────────────────
+  const homeMs = finished.filter(m => m.homeTeam.id === homeId || m.awayTeam.id === homeId);
+  const awayMs = finished.filter(m => m.homeTeam.id === awayId || m.awayTeam.id === awayId);
+
+  const getOpp = (m: Match, teamId: string) =>
+    m.homeTeam.id === teamId ? m.awayTeam : m.homeTeam;
+
+  const getScore = (m: Match, teamId: string) => {
+    const isHome = m.homeTeam.id === teamId;
+    return isHome ? `${m.homeScore}-${m.awayScore}` : `${m.awayScore}-${m.homeScore}`;
+  };
+
+  const commonLines: string[] = [];
+  homeMs.forEach(hm => {
+    const opp = getOpp(hm, homeId);
+    const counterpart = awayMs.find(am => getOpp(am, awayId).id === opp.id);
+    if (counterpart) {
+      commonLines.push(
+        `  Adversário comum: ${opp.name} → ${homeName} fez ${getScore(hm, homeId)} | ${awayName} fez ${getScore(counterpart, awayId)}`,
+      );
+    }
+  });
+  if (commonLines.length > 0) {
+    sections.push(`\n[Comparação por adversário comum na Copa 2026 — peso ALTO]`);
+    commonLines.forEach(l => sections.push(l));
+    sections.push(`  (Use esta comparação para inferir força ofensiva/defensiva relativa entre os times)`);
+  }
+
+  // ── 4. Cartões acumulados (risco de suspensão) ───────────────────────────────
+  if (cardsByMatchId.size > 0) {
+    const cardLines: string[] = [];
+
+    cardsByMatchId.forEach((cards, matchId) => {
+      const m = finished.find(f => f.id === matchId);
+      if (!m) return;
+
+      cards.forEach(card => {
+        const isHomeTeamMatch = m.homeTeam.id === homeId || m.awayTeam.id === homeId;
+        const isAwayTeamMatch = m.homeTeam.id === awayId || m.awayTeam.id === awayId;
+
+        // Attribution by checking if card team name matches our team names (case-insensitive partial)
+        const cardTeamNorm = card.teamName.toLowerCase();
+        const matchesHome = cardTeamNorm.includes(homeName.toLowerCase().split(" ")[0]) ||
+          homeName.toLowerCase().includes(cardTeamNorm.split(" ")[0]);
+        const matchesAway = cardTeamNorm.includes(awayName.toLowerCase().split(" ")[0]) ||
+          awayName.toLowerCase().includes(cardTeamNorm.split(" ")[0]);
+
+        if ((isHomeTeamMatch && matchesHome) || (isAwayTeamMatch && matchesAway)) {
+          const team = matchesHome ? homeName : awayName;
+          cardLines.push(`  ${team} — ${card.playerName}: ${card.cardType} (${card.minute})`);
+        }
+      });
+    });
+
+    if (cardLines.length > 0) {
+      sections.push(`\n[Cartões acumulados na Copa 2026 — risco de suspensão]`);
+      cardLines.forEach(l => sections.push(l));
+      sections.push(`  (2 cartões amarelos = suspensão automática na fase de grupos. Considere impacto na escalação)`);
+    }
+  }
+
+  if (sections.length === 0) return "";
 
   return `
-RESULTADOS REAIS JÁ DISPUTADOS NA FIFA WORLD CUP 2026 (dados da ESPN — use obrigatoriamente):
-${lines.join("\n")}
-Estes são fatos concretos do torneio em curso. Utilize-os para calibrar forma recente,
-classificação do grupo e contexto da partida. Não ignore nem contradiga esses resultados.
+DADOS REAIS DA FIFA WORLD CUP 2026 (ESPN) — USE COM PESO ALTO NA ANÁLISE:
+${sections.join("\n")}
+
+Estes são fatos do torneio em curso. Dê PRIORIDADE a estes dados sobre qualquer
+estimativa histórica ou de pré-torneio. Não ignore nem contradiga nenhuma informação acima.
 `;
 }
 
-export async function generateMatchAnalysis(match: Match, recentResults: Match[] = []): Promise<MatchAnalysis> {
+export async function generateMatchAnalysis(match: Match, recentResults: Match[] = [], cardsByMatchId: Map<string, CardEvent[]> = new Map()): Promise<MatchAnalysis> {
   const stageLabel =
     match.stage === "group"
       ? `Fase de Grupos - Grupo ${match.group}`
@@ -56,7 +147,7 @@ export async function generateMatchAnalysis(match: Match, recentResults: Match[]
     ? `${match.venue}, ${match.city}`
     : match.city ?? "A definir";
 
-  const recentResultsBlock = buildRecentResultsBlock(match, recentResults);
+  const recentResultsBlock = buildRecentResultsBlock(match, recentResults, cardsByMatchId);
 
   const prompt = `Atue como um analista esportivo profissional especializado em futebol internacional.
 Forneça uma análise completa e detalhada do jogo entre:

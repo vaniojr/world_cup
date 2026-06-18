@@ -157,3 +157,51 @@ export async function fetchStandingsForGroup(groupId: string): Promise<Standing[
   if (!group) return [];
   return calculateGroupStandings(group.matches, group.teams);
 }
+
+export type CardEvent = {
+  playerName: string;
+  teamName: string;
+  cardType: "Amarelo" | "Vermelho" | "Segundo Amarelo (Expulsão)";
+  minute: string;
+};
+
+export async function fetchMatchCards(eventId: string): Promise<CardEvent[]> {
+  try {
+    const res = await fetch(`${ESPN_BASE}/summary?event=${eventId}`, {
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    // ESPN may nest details in different paths depending on the build
+    const details: Record<string, unknown>[] =
+      data?.gamepackageJSON?.header?.competitions?.[0]?.details ??
+      data?.header?.competitions?.[0]?.details ??
+      [];
+
+    return details
+      .filter((d) => {
+        const text = ((d.type as Record<string, unknown>)?.text as string ?? "").toLowerCase();
+        return text.includes("yellow") || text.includes("red card");
+      })
+      .map((d): CardEvent => {
+        const text = (d.type as Record<string, unknown>)?.text as string ?? "";
+        const athletes = (d.athletesInvolved as Record<string, unknown>[]) ?? [];
+        const athlete = (athletes[0] ?? {}) as Record<string, unknown>;
+        const team = (athlete.team as Record<string, unknown>) ?? {};
+
+        let cardType: CardEvent["cardType"] = "Amarelo";
+        if (/second.*yellow|yellow.*red/i.test(text)) cardType = "Segundo Amarelo (Expulsão)";
+        else if (/red card/i.test(text)) cardType = "Vermelho";
+
+        return {
+          playerName: (athlete.displayName as string) ?? "Jogador",
+          teamName:   (team.displayName as string) ?? "",
+          cardType,
+          minute: ((d.clock as Record<string, unknown>)?.displayValue as string) ?? "?",
+        };
+      });
+  } catch {
+    return [];
+  }
+}

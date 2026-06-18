@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateMatchAnalysis } from "@/services/aiAnalysisService";
-import { fetchAllGroupMatches } from "@/services/espnService";
+import { fetchAllGroupMatches, fetchMatchCards, CardEvent } from "@/services/espnService";
 import { getAnalysis, saveAnalysis, initAnalysesTable } from "@/lib/db";
 import { Match } from "@/types";
 
@@ -46,7 +46,28 @@ export async function POST(req: NextRequest) {
     let recentResults: Match[] = [];
     try { recentResults = await fetchAllGroupMatches(); } catch { /* fallback to no context */ }
 
-    const analysis = await generateMatchAnalysis(match, recentResults);
+    // Fetch cards for finished matches involving the two teams being analyzed
+    const cardsByMatchId = new Map<string, CardEvent[]>();
+    try {
+      const homeId = match.homeTeam.id;
+      const awayId = match.awayTeam.id;
+      const relevantIds = recentResults
+        .filter(m =>
+          m.status === "finished" &&
+          (m.homeTeam.id === homeId || m.awayTeam.id === homeId ||
+           m.homeTeam.id === awayId || m.awayTeam.id === awayId),
+        )
+        .map(m => m.id);
+
+      await Promise.all(
+        relevantIds.map(async (id) => {
+          const cards = await fetchMatchCards(id);
+          if (cards.length > 0) cardsByMatchId.set(id, cards);
+        }),
+      );
+    } catch { /* fallback: analyze without card data */ }
+
+    const analysis = await generateMatchAnalysis(match, recentResults, cardsByMatchId);
     await saveAnalysis(match.id, analysis);
     return NextResponse.json({ cached: false, analysis });
   } catch (error) {
