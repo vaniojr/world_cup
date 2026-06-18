@@ -5,7 +5,48 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-export async function generateMatchAnalysis(match: Match): Promise<MatchAnalysis> {
+function buildRecentResultsBlock(match: Match, allMatches: Match[]): string {
+  const finished = allMatches.filter(
+    m => m.status === "finished" && m.homeScore !== undefined && m.awayScore !== undefined,
+  );
+  if (finished.length === 0) return "";
+
+  const fmt = (m: Match) => {
+    const d = new Date(m.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return `  ${m.homeTeam.name} ${m.homeScore} x ${m.awayScore} ${m.awayTeam.name} (${d})`;
+  };
+
+  const lines: string[] = [];
+
+  const sameGroup = finished.filter(m => m.group && m.group === match.group);
+  if (sameGroup.length > 0) {
+    lines.push(`Grupo ${match.group} — resultados já disputados na Copa 2026:`);
+    sameGroup.forEach(m => lines.push(fmt(m)));
+  }
+
+  const homeId = match.homeTeam.id;
+  const awayId = match.awayTeam.id;
+  const otherTeamMatches = finished.filter(
+    m => m.group !== match.group &&
+      (m.homeTeam.id === homeId || m.awayTeam.id === homeId ||
+       m.homeTeam.id === awayId || m.awayTeam.id === awayId),
+  );
+  if (otherTeamMatches.length > 0) {
+    lines.push(`Outros jogos das seleções na Copa 2026:`);
+    otherTeamMatches.forEach(m => lines.push(fmt(m)));
+  }
+
+  if (lines.length === 0) return "";
+
+  return `
+RESULTADOS REAIS JÁ DISPUTADOS NA FIFA WORLD CUP 2026 (dados da ESPN — use obrigatoriamente):
+${lines.join("\n")}
+Estes são fatos concretos do torneio em curso. Utilize-os para calibrar forma recente,
+classificação do grupo e contexto da partida. Não ignore nem contradiga esses resultados.
+`;
+}
+
+export async function generateMatchAnalysis(match: Match, recentResults: Match[] = []): Promise<MatchAnalysis> {
   const stageLabel =
     match.stage === "group"
       ? `Fase de Grupos - Grupo ${match.group}`
@@ -15,6 +56,8 @@ export async function generateMatchAnalysis(match: Match): Promise<MatchAnalysis
     ? `${match.venue}, ${match.city}`
     : match.city ?? "A definir";
 
+  const recentResultsBlock = buildRecentResultsBlock(match, recentResults);
+
   const prompt = `Atue como um analista esportivo profissional especializado em futebol internacional.
 Forneça uma análise completa e detalhada do jogo entre:
 ${match.homeTeam.name} x ${match.awayTeam.name}
@@ -22,7 +65,7 @@ Competição: FIFA World Cup 2026
 Fase: ${stageLabel}
 Data: ${match.date}
 Local: ${venueLabel}
-
+${recentResultsBlock}
 CONTEXTO OBRIGATÓRIO — COPA DO MUNDO 2026:
 - Canadá, Estados Unidos e México são PAÍSES-SEDE e se classificaram AUTOMATICAMENTE, sem disputar eliminatórias da CONCACAF para este ciclo.
   Portanto, NÃO existem estatísticas de eliminatórias 2026 para essas seleções. Nunca invente ou extrapole dados dessas eliminatórias.

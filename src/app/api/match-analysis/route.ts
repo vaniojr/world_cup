@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateMatchAnalysis } from "@/services/aiAnalysisService";
+import { fetchAllGroupMatches } from "@/services/espnService";
 import { getAnalysis, saveAnalysis, initAnalysesTable } from "@/lib/db";
 import { Match } from "@/types";
 
@@ -41,7 +42,11 @@ export async function POST(req: NextRequest) {
       if (cached) return NextResponse.json({ cached: true, analysis: cached });
     }
 
-    const analysis = await generateMatchAnalysis(match);
+    // Fetch real World Cup results from ESPN to ground the analysis in facts
+    let recentResults: Match[] = [];
+    try { recentResults = await fetchAllGroupMatches(); } catch { /* fallback to no context */ }
+
+    const analysis = await generateMatchAnalysis(match, recentResults);
     await saveAnalysis(match.id, analysis);
     return NextResponse.json({ cached: false, analysis });
   } catch (error) {
