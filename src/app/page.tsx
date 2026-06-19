@@ -43,6 +43,15 @@ const CONF_LABEL: Record<string, string> = {
   OFC:      "OFC · Oceania",
 };
 
+const STAGE_LABELS: Record<string, string> = {
+  "round-of-32":  "Fase de 32",
+  "round-of-16":  "Oitavas de Final",
+  "quarter-final":"Quartas de Final",
+  "semi-final":   "Semifinais",
+  "third-place":  "3º Lugar",
+  "final":        "Final",
+};
+
 const STATUS_FILTERS: { value: "all" | MatchStatus; label: string }[] = [
   { value: "all",       label: "Todos" },
   { value: "scheduled", label: "Agendado" },
@@ -59,6 +68,9 @@ export default function HomePage() {
   const [syncing, setSyncing]               = useState(false);
   const [statusFilter, setStatusFilter]     = useState<"all" | MatchStatus>("all");
   const [dateFilter, setDateFilter]         = useState<string>("all");
+  const [groupStageFilter, setGroupStageFilter] = useState<string>("all");
+  const [teamFilter, setTeamFilter]         = useState<string>("all");
+  const [confFilter, setConfFilter]         = useState<string>("all");
   const [visibleCount, setVisibleCount]     = useState(12);
   const matchesRef = useRef(matches);
   matchesRef.current = matches;
@@ -181,6 +193,29 @@ export default function HomePage() {
     [matches],
   );
 
+  // Options for Group/Stage dropdown (derived from actual matches)
+  const groupStageOptions = useMemo(() => {
+    const groups = [...new Set(
+      sortedMatches.filter(m => m.stage === "group" && m.group).map(m => m.group!),
+    )].sort();
+    const knockoutStages = [...new Set(
+      sortedMatches.filter(m => m.stage !== "group").map(m => m.stage),
+    )];
+    return { groups, knockoutStages };
+  }, [sortedMatches]);
+
+  // Options for Team dropdown (all unique teams, sorted alphabetically)
+  const teamOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    sortedMatches.forEach(m => {
+      map.set(m.homeTeam.fifaCode, m.homeTeam.name);
+      map.set(m.awayTeam.fifaCode, m.awayTeam.name);
+    });
+    return [...map.entries()]
+      .map(([code, name]) => ({ value: code, label: name }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [sortedMatches]);
+
   // Available match dates (in the viewer's local timezone) for the date filter
   const dateOptions = useMemo(() => {
     const keys = Array.from(new Set(sortedMatches.map(m => getLocalDateKey(m.date)))).sort();
@@ -208,14 +243,37 @@ export default function HomePage() {
     return sortedMatches.filter(m => {
       if (statusFilter !== "all" && m.status !== statusFilter) return false;
       if (dateFilter !== "all" && getLocalDateKey(m.date) !== dateFilter) return false;
+
+      if (groupStageFilter !== "all") {
+        if (groupStageFilter === "group_all") {
+          if (m.stage !== "group") return false;
+        } else if (groupStageFilter.length === 1) {
+          if (m.stage !== "group" || m.group !== groupStageFilter) return false;
+        } else {
+          if (m.stage !== groupStageFilter) return false;
+        }
+      }
+
+      if (teamFilter !== "all") {
+        if (m.homeTeam.fifaCode !== teamFilter && m.awayTeam.fifaCode !== teamFilter) return false;
+      }
+
+      if (confFilter !== "all") {
+        const hc = TEAM_CONF[m.homeTeam.fifaCode];
+        const ac = TEAM_CONF[m.awayTeam.fifaCode];
+        if (hc !== confFilter && ac !== confFilter) return false;
+      }
+
       return true;
     });
-  }, [sortedMatches, statusFilter, dateFilter]);
+  }, [sortedMatches, statusFilter, dateFilter, groupStageFilter, teamFilter, confFilter]);
+
+  const hasExtraFilters = groupStageFilter !== "all" || teamFilter !== "all" || confFilter !== "all";
 
   // Reset pagination whenever filters change
   useEffect(() => {
     setVisibleCount(12);
-  }, [statusFilter, dateFilter]);
+  }, [statusFilter, dateFilter, groupStageFilter, teamFilter, confFilter]);
 
   return (
     <div className="space-y-8">
@@ -401,8 +459,8 @@ export default function HomePage() {
           </span>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
+        {/* Filters — row 1: status + date */}
+        <div className="flex flex-wrap items-center gap-2 mb-2">
           <Filter className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" />
           {STATUS_FILTERS.map(f => (
             <button
@@ -417,7 +475,6 @@ export default function HomePage() {
               {f.label} ({statusCounts[f.value]})
             </button>
           ))}
-
           <select
             value={dateFilter}
             onChange={e => setDateFilter(e.target.value)}
@@ -428,6 +485,75 @@ export default function HomePage() {
               <option key={d.value} value={d.value}>{d.label}</option>
             ))}
           </select>
+        </div>
+
+        {/* Filters — row 2: group/stage + team + confederation */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <select
+            value={groupStageFilter}
+            onChange={e => setGroupStageFilter(e.target.value)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-none focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors ${
+              groupStageFilter !== "all"
+                ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
+            }`}
+          >
+            <option value="all">Todas as fases</option>
+            {groupStageOptions.groups.length > 0 && (
+              <optgroup label="Fase de Grupos">
+                <option value="group_all">Todos os Grupos</option>
+                {groupStageOptions.groups.map(g => (
+                  <option key={g} value={g}>Grupo {g}</option>
+                ))}
+              </optgroup>
+            )}
+            {groupStageOptions.knockoutStages.length > 0 && (
+              <optgroup label="Mata-Mata">
+                {groupStageOptions.knockoutStages.map(s => (
+                  <option key={s} value={s}>{STAGE_LABELS[s] ?? s}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+
+          <select
+            value={teamFilter}
+            onChange={e => setTeamFilter(e.target.value)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-none focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors ${
+              teamFilter !== "all"
+                ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
+            }`}
+          >
+            <option value="all">Todos os times</option>
+            {teamOptions.map(t => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+
+          <select
+            value={confFilter}
+            onChange={e => setConfFilter(e.target.value)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-none focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer transition-colors ${
+              confFilter !== "all"
+                ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300"
+            }`}
+          >
+            <option value="all">Todas as confederações</option>
+            {Object.keys(CONF_LABEL).map(c => (
+              <option key={c} value={c}>{CONF_LABEL[c]}</option>
+            ))}
+          </select>
+
+          {hasExtraFilters && (
+            <button
+              onClick={() => { setGroupStageFilter("all"); setTeamFilter("all"); setConfFilter("all"); }}
+              className="ml-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+            >
+              ✕ Limpar filtros
+            </button>
+          )}
         </div>
 
         {/* Match grid */}
