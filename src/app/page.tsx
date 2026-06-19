@@ -9,9 +9,39 @@ import { Match, MatchStatus, Group } from "@/types";
 import { AnalysisSummary } from "@/lib/db";
 import { calculatePoints } from "@/lib/scoring";
 import { getLocalDateKey } from "@/lib/utils";
-import { Activity, Calendar, Filter, Trophy, RefreshCw, Sparkles, Star } from "lucide-react";
+import { Activity, BarChart3, Calendar, Filter, Trophy, RefreshCw, Sparkles, Star } from "lucide-react";
 
 const LIVE_POLL_INTERVAL = 30_000;
+
+const TEAM_CONF: Record<string, string> = {
+  // UEFA
+  CZE: "UEFA", BIH: "UEFA", SUI: "UEFA", SCO: "UEFA", TUR: "UEFA",
+  GER: "UEFA", NED: "UEFA", SWE: "UEFA", BEL: "UEFA", ESP: "UEFA",
+  FRA: "UEFA", NOR: "UEFA", AUT: "UEFA", POR: "UEFA", ENG: "UEFA", CRO: "UEFA",
+  // CONMEBOL
+  BRA: "CONMEBOL", PAR: "CONMEBOL", ECU: "CONMEBOL", URU: "CONMEBOL",
+  ARG: "CONMEBOL", COL: "CONMEBOL",
+  // CONCACAF
+  MEX: "CONCACAF", CAN: "CONCACAF", USA: "CONCACAF", HAI: "CONCACAF",
+  CUW: "CONCACAF", PAN: "CONCACAF",
+  // AFC
+  KOR: "AFC", QAT: "AFC", AUS: "AFC", JPN: "AFC", IRN: "AFC",
+  KSA: "AFC", IRQ: "AFC", JOR: "AFC", UZB: "AFC",
+  // CAF
+  RSA: "CAF", MAR: "CAF", CIV: "CAF", TUN: "CAF", EGY: "CAF",
+  SEN: "CAF", ALG: "CAF", COD: "CAF", GHA: "CAF", CPV: "CAF",
+  // OFC
+  NZL: "OFC",
+};
+
+const CONF_LABEL: Record<string, string> = {
+  UEFA:     "UEFA · Europa",
+  CONMEBOL: "CONMEBOL · América do Sul",
+  CONCACAF: "CONCACAF · América Central/Norte",
+  AFC:      "AFC · Ásia",
+  CAF:      "CAF · África",
+  OFC:      "OFC · Oceania",
+};
 
 const STATUS_FILTERS: { value: "all" | MatchStatus; label: string }[] = [
   { value: "all",       label: "Todos" },
@@ -92,6 +122,56 @@ export default function HomePage() {
     }
     return { analyzed, points, scored };
   }, [summaries, matches]);
+
+  const tournamentStats = useMemo(() => {
+    const finished = matches.filter(
+      m => m.status === "finished" && m.homeScore !== undefined && m.awayScore !== undefined,
+    );
+    if (finished.length === 0) return null;
+
+    // ── Confederation W/D/L ──────────────────────────────────────────────────
+    const confMap: Record<string, { wins: number; draws: number; losses: number }> = {};
+    const ensure = (c: string) => { if (!confMap[c]) confMap[c] = { wins: 0, draws: 0, losses: 0 }; };
+
+    finished.forEach(m => {
+      const hc = TEAM_CONF[m.homeTeam.fifaCode] ?? "?";
+      const ac = TEAM_CONF[m.awayTeam.fifaCode] ?? "?";
+      ensure(hc); ensure(ac);
+      if (m.homeScore! > m.awayScore!)      { confMap[hc].wins++;  confMap[ac].losses++; }
+      else if (m.homeScore! < m.awayScore!) { confMap[ac].wins++;  confMap[hc].losses++; }
+      else                                   { confMap[hc].draws++; confMap[ac].draws++;  }
+    });
+
+    const confStats = Object.entries(confMap)
+      .map(([name, s]) => ({ name, ...s, total: s.wins + s.draws + s.losses }))
+      .sort((a, b) => b.total - a.total);
+
+    // ── Top-5 scores (normalized: higher-lower) ──────────────────────────────
+    const scoreCounts: Record<string, number> = {};
+    finished.forEach(m => {
+      const hi = Math.max(m.homeScore!, m.awayScore!);
+      const lo = Math.min(m.homeScore!, m.awayScore!);
+      const key = `${hi}-${lo}`;
+      scoreCounts[key] = (scoreCounts[key] ?? 0) + 1;
+    });
+
+    const total = finished.length;
+    const sorted = Object.entries(scoreCounts).sort((a, b) => b[1] - a[1]);
+    const maxCount = sorted[0]?.[1] ?? 1;
+
+    const top5 = sorted.slice(0, 5).map(([score, count]) => ({
+      score,
+      count,
+      pct:    Math.round((count / total) * 100),
+      barPct: Math.round((count / maxCount) * 100),
+    }));
+
+    const othersCount = sorted.slice(5).reduce((s, [, c]) => s + c, 0);
+    const othersPct   = Math.round((othersCount / total) * 100);
+    const othersBar   = othersCount > 0 ? Math.round((othersCount / maxCount) * 100) : 0;
+
+    return { confStats, top5, othersCount, othersPct, othersBar, total };
+  }, [matches]);
 
   const liveMatches = matches.filter(m => m.status === "live");
 
@@ -207,6 +287,92 @@ export default function HomePage() {
           </button>
         </div>
       </div>
+
+      {/* Tournament Stats */}
+      {tournamentStats && (
+        <section>
+          <h3 className="flex items-center gap-2 text-lg font-bold mb-4 text-gray-900 dark:text-white">
+            <BarChart3 className="w-5 h-5 text-blue-500" />
+            Estatísticas da Copa
+            <span className="text-xs font-normal text-gray-400 ml-1">
+              {tournamentStats.total} jogo{tournamentStats.total !== 1 ? "s" : ""} encerrado{tournamentStats.total !== 1 ? "s" : ""}
+            </span>
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            {/* Confederation W/D/L */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-4">
+                Resultados por Confederação
+              </h4>
+              <div className="space-y-3">
+                {tournamentStats.confStats.map(cs => {
+                  const winPct  = cs.total > 0 ? (cs.wins  / cs.total) * 100 : 0;
+                  const drawPct = cs.total > 0 ? (cs.draws / cs.total) * 100 : 0;
+                  const lossPct = cs.total > 0 ? (cs.losses / cs.total) * 100 : 0;
+                  return (
+                    <div key={cs.name}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate max-w-[55%]">
+                          {CONF_LABEL[cs.name] ?? cs.name}
+                        </span>
+                        <span className="text-xs shrink-0 ml-2">
+                          <span className="font-bold text-green-600 dark:text-green-400">{cs.wins}V</span>
+                          {" "}<span className="font-bold text-yellow-500 dark:text-yellow-400">{cs.draws}E</span>
+                          {" "}<span className="font-bold text-red-500 dark:text-red-400">{cs.losses}D</span>
+                          <span className="text-gray-400"> · {cs.total}J</span>
+                        </span>
+                      </div>
+                      <div className="flex h-2 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-700">
+                        {winPct  > 0 && <div className="bg-green-500 h-full" style={{ width: `${winPct}%`  }} />}
+                        {drawPct > 0 && <div className="bg-yellow-400 h-full" style={{ width: `${drawPct}%` }} />}
+                        {lossPct > 0 && <div className="bg-red-500 h-full"   style={{ width: `${lossPct}%` }} />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Top-5 scores */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+              <h4 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-4">
+                Placares mais frequentes
+              </h4>
+              <div className="space-y-2.5">
+                {tournamentStats.top5.map((s, i) => (
+                  <div key={s.score} className="flex items-center gap-2">
+                    <span className="w-4 text-xs font-bold text-gray-400 text-right shrink-0">{i + 1}.</span>
+                    <span className="font-mono font-bold text-sm text-gray-900 dark:text-white w-12 shrink-0">
+                      {s.score.replace("-", " × ")}
+                    </span>
+                    <div className="flex-1 h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                      <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${s.barPct}%` }} />
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 w-24 text-right shrink-0">
+                      {s.count}× <span className="text-blue-500 font-semibold">({s.pct}%)</span>
+                    </span>
+                  </div>
+                ))}
+                {tournamentStats.othersCount > 0 && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-gray-100 dark:border-gray-700">
+                    <span className="w-4 text-xs text-gray-400 text-right shrink-0">–</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 w-12 shrink-0">Outros</span>
+                    <div className="flex-1 h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+                      <div className="h-full bg-gray-400 rounded-full" style={{ width: `${tournamentStats.othersBar}%` }} />
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 w-24 text-right shrink-0">
+                      {tournamentStats.othersCount}× <span className="font-semibold">({tournamentStats.othersPct}%)</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        </section>
+      )}
 
       {/* Live Matches */}
       {liveMatches.length > 0 && (
