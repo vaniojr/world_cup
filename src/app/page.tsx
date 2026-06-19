@@ -171,14 +171,14 @@ export default function HomePage() {
     const sorted = Object.entries(scoreCounts).sort((a, b) => b[1] - a[1]);
     const maxCount = sorted[0]?.[1] ?? 1;
 
-    const top5 = sorted.slice(0, 5).map(([score, count]) => ({
+    const top5 = sorted.slice(0, 7).map(([score, count]) => ({
       score,
       count,
       pct:    Math.round((count / total) * 100),
       barPct: Math.round((count / maxCount) * 100),
     }));
 
-    const othersCount = sorted.slice(5).reduce((s, [, c]) => s + c, 0);
+    const othersCount = sorted.slice(7).reduce((s, [, c]) => s + c, 0);
     const othersPct   = Math.round((othersCount / total) * 100);
     const othersBar   = othersCount > 0 ? Math.round((othersCount / maxCount) * 100) : 0;
 
