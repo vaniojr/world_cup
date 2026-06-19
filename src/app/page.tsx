@@ -25,13 +25,13 @@ const TEAM_CONF: Record<string, string> = {
   MEX: "CONCACAF", CAN: "CONCACAF", USA: "CONCACAF", HAI: "CONCACAF",
   CUW: "CONCACAF", PAN: "CONCACAF",
   // AFC
-  KOR: "AFC", QAT: "AFC", AUS: "AFC", JPN: "AFC", IRN: "AFC",
+  KOR: "AFC", QAT: "AFC", JPN: "AFC", IRN: "AFC",
   KSA: "AFC", IRQ: "AFC", JOR: "AFC", UZB: "AFC",
   // CAF
   RSA: "CAF", MAR: "CAF", CIV: "CAF", TUN: "CAF", EGY: "CAF",
   SEN: "CAF", ALG: "CAF", COD: "CAF", GHA: "CAF", CPV: "CAF",
   // OFC
-  NZL: "OFC",
+  NZL: "OFC", AUS: "OFC",
 };
 
 const CONF_LABEL: Record<string, string> = {
