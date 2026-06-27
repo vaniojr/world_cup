@@ -1,9 +1,10 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { ALL_MATCHES } from "@/data/mockWorldCup2026";
 import { MatchCard } from "@/components/matches/MatchCard";
 import { MatchAnalysisModal } from "@/components/matches/MatchAnalysisModal";
 import { Match, Stage } from "@/types";
+import { AnalysisSummary } from "@/lib/db";
 
 const LIVE_POLL_INTERVAL = 30_000;
 
@@ -20,6 +21,7 @@ export default function KnockoutPage() {
   const [activeStage, setActiveStage] = useState<Stage>("round-of-32");
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [matches, setMatches] = useState<Match[]>(ALL_MATCHES);
+  const [summaries, setSummaries] = useState<AnalysisSummary[]>([]);
   const matchesRef = useRef(matches);
   matchesRef.current = matches;
 
@@ -33,13 +35,34 @@ export default function KnockoutPage() {
     } catch { /* keep current data */ }
   }, []);
 
+  const fetchSummaries = useCallback(async () => {
+    try {
+      const res = await fetch("/api/analyses-summary");
+      if (res.ok) {
+        const data = await res.json();
+        setSummaries(data.summaries ?? []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     syncData();
+    fetchSummaries();
     const interval = setInterval(() => {
       if (matchesRef.current.some(m => m.status === "live")) syncData();
     }, LIVE_POLL_INTERVAL);
     return () => clearInterval(interval);
-  }, [syncData]);
+  }, [syncData, fetchSummaries]);
+
+  const handleModalClose = useCallback(() => {
+    setSelectedMatch(null);
+    fetchSummaries();
+  }, [fetchSummaries]);
+
+  const predictionsMap = useMemo(
+    () => new Map(summaries.map(s => [s.matchId, s.predictedScore])),
+    [summaries],
+  );
 
   const stageMatches = matches.filter(m => m.stage === activeStage);
 
@@ -74,7 +97,7 @@ export default function KnockoutPage() {
       {stageMatches.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {stageMatches.map(m => (
-            <MatchCard key={m.id} match={m} onClick={setSelectedMatch} />
+            <MatchCard key={m.id} match={m} predictedScore={predictionsMap.get(m.id)} onClick={setSelectedMatch} />
           ))}
         </div>
       ) : (
@@ -86,7 +109,7 @@ export default function KnockoutPage() {
       )}
 
       {selectedMatch && (
-        <MatchAnalysisModal match={selectedMatch} onClose={() => setSelectedMatch(null)} />
+        <MatchAnalysisModal match={selectedMatch} onClose={handleModalClose} />
       )}
     </div>
   );
