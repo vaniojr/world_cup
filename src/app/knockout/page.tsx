@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ALL_MATCHES } from "@/data/mockWorldCup2026";
 import { MatchCard } from "@/components/matches/MatchCard";
 import { MatchAnalysisModal } from "@/components/matches/MatchAnalysisModal";
 import { Match, Stage } from "@/types";
+
+const LIVE_POLL_INTERVAL = 30_000;
 
 const knockoutStages: { id: Stage; label: string }[] = [
   { id: "round-of-32",    label: "Avos de Final" },
@@ -17,8 +19,29 @@ const knockoutStages: { id: Stage; label: string }[] = [
 export default function KnockoutPage() {
   const [activeStage, setActiveStage] = useState<Stage>("round-of-32");
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+  const [matches, setMatches] = useState<Match[]>(ALL_MATCHES);
+  const matchesRef = useRef(matches);
+  matchesRef.current = matches;
 
-  const stageMatches = ALL_MATCHES.filter(m => m.stage === activeStage);
+  const syncData = useCallback(async () => {
+    try {
+      const res = await fetch("/api/matches", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setMatches(data.matches);
+      }
+    } catch { /* keep current data */ }
+  }, []);
+
+  useEffect(() => {
+    syncData();
+    const interval = setInterval(() => {
+      if (matchesRef.current.some(m => m.status === "live")) syncData();
+    }, LIVE_POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [syncData]);
+
+  const stageMatches = matches.filter(m => m.stage === activeStage);
 
   return (
     <div className="space-y-6">

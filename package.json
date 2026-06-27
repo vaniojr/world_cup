@@ -1,6 +1,6 @@
 {
   "name": "astute4ai-worldcup",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "main": "index.js",
   "scripts": {
     "dev": "next dev",

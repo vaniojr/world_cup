@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { fetchAllGroupMatches } from "@/services/espnService";
+import { fetchAllGroupMatches, fetchKnockoutMatches } from "@/services/espnService";
 import { ALL_MATCHES, GROUPS } from "@/data/mockWorldCup2026";
 import { Match } from "@/types";
 
 export async function GET() {
   try {
-    const espnMatches = await fetchAllGroupMatches();
+    const [espnMatches, knockoutMatches] = await Promise.all([
+      fetchAllGroupMatches(),
+      fetchKnockoutMatches(),
+    ]);
 
     // Merge ESPN live scores into our static schedule using match ID
     const scoreMap = new Map<string, Pick<Match, "homeScore" | "awayScore" | "status">>();
@@ -20,7 +23,7 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      matches: merged,
+      matches: [...merged, ...knockoutMatches],
       groups: GROUPS.map(g => ({
         ...g,
         matches: g.matches.map(m => {

@@ -1,9 +1,20 @@
-import { Match, Standing, Team, Group } from "@/types";
+import { Match, Standing, Team, Group, Stage } from "@/types";
 import { GROUPS, ALL_TEAMS } from "@/data/mockWorldCup2026";
 import { calculateGroupStandings } from "@/lib/standings";
 
 const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
 const ESPN_STANDINGS = "https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings";
+
+// ESPN's event.season.slug identifies the round directly (verified against the live API).
+const SEASON_SLUG_TO_STAGE: Record<string, Stage> = {
+  "group-stage":     "group",
+  "round-of-32":     "round-of-32",
+  "round-of-16":     "round-of-16",
+  "quarterfinals":   "quarter-final",
+  "semifinals":      "semi-final",
+  "3rd-place-match": "third-place",
+  "final":           "final",
+};
 
 // ─── ESPN → internal type mappers ────────────────────────────────────────────
 
@@ -61,7 +72,8 @@ function mapEspnFixture(event: Record<string, unknown>): Match | null {
     // Determine group from our data
     const group = homeTeam.group ?? "";
 
-    const stage = group ? "group" : "round-of-32";
+    const seasonSlug = (event.season as Record<string, unknown> | undefined)?.slug as string | undefined;
+    const stage = (seasonSlug && SEASON_SLUG_TO_STAGE[seasonSlug]) || (group ? "group" : "round-of-32");
 
     return {
       id: event.id as string,
@@ -110,6 +122,23 @@ export async function fetchAllGroupMatches(): Promise<Match[]> {
     return events
       .map(mapEspnFixture)
       .filter((m): m is Match => m !== null && m.stage === "group");
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchKnockoutMatches(): Promise<Match[]> {
+  try {
+    const res = await fetch(
+      `${ESPN_BASE}/scoreboard?dates=20260628-20260720&limit=200`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const events: Record<string, unknown>[] = data.events ?? [];
+    return events
+      .map(mapEspnFixture)
+      .filter((m): m is Match => m !== null && m.stage !== "group");
   } catch {
     return [];
   }
